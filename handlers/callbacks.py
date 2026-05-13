@@ -22,8 +22,17 @@ active_tasks = {}
 class DownloadWorkflow(StatesGroup):
     waiting_for_password = State()
 
-async def ask_compression(message: Message, batch_id: str):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📄 Raw (No Zip)", callback_data=f"comp_raw_{batch_id}")],[InlineKeyboardButton(text="📦 Zip (Max Compression)", callback_data=f"comp_zip_{batch_id}")],[InlineKeyboardButton(text="🔐 Zip with Password", callback_data=f"comp_pass_{batch_id}")]
+async def ask_compression(message: Message, batch_id: str, is_video: bool = False):
+    raw_buttons = [InlineKeyboardButton(text="📄 Raw (Normal)", callback_data=f"comp_rawnormal_{batch_id}")]
+
+    # NOTE: Only show the 5-min chunk option if the file is a video
+    if is_video:
+        raw_buttons.append(InlineKeyboardButton(text="🎬 Raw (5-Min Chunks)", callback_data=f"comp_rawchunk_{batch_id}"))
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        raw_buttons,
+        [InlineKeyboardButton(text="📦 Zip (Max Compression)", callback_data=f"comp_zip_{batch_id}")],
+        [InlineKeyboardButton(text="🔐 Zip with Password", callback_data=f"comp_pass_{batch_id}")]
     ])
     await message.answer("📥 **Ready!**\nHow should I process the batch?", reply_markup=keyboard, parse_mode="Markdown")
 
@@ -38,7 +47,9 @@ async def process_quality(callback: CallbackQuery, state: FSMContext):
 
     task_store[batch_id]["quality"] = quality
     await callback.message.delete()
-    await ask_compression(callback.message, batch_id)
+
+    is_vid = task_store[batch_id].get("is_video", False)
+    await ask_compression(callback.message, batch_id, is_video=is_vid)
 
 @router.callback_query(F.data.startswith("comp_"))
 async def process_compression(callback: CallbackQuery, state: FSMContext):

@@ -51,11 +51,13 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
 
             await run_cmd("git", "clone", "--depth=1", "--no-checkout", "--filter=blob:none", repo_url, clone_dir, hide_token=token)
             await run_cmd("git", "config", "core.sparseCheckout", "true", cwd=clone_dir)
-            
+
+            await run_cmd("git", "config", "http.postBuffer", "157286400", cwd=clone_dir)
+
             sparse_path = os.path.join(clone_dir, ".git", "info", "sparse-checkout")
             with open(sparse_path, "w") as f:
                 f.write("/*\n!/dl/\n!/apks/\n")
-            
+
             await run_cmd("git", "checkout", "main", cwd=clone_dir)
 
             await run_cmd("git", "config", "user.name", "RGit Bot", cwd=clone_dir)
@@ -65,15 +67,15 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
             os.makedirs(dl_dir, exist_ok=True)
 
             links =[]
-            uploaded_filenames =[] 
+            uploaded_filenames =[]
             total_files = len(file_paths)
             tehran_time = (datetime.utcnow() + timedelta(hours=3, minutes=30)).strftime("%Y-%m-%d %H:%M")
             new_links_content = f"### 📅 {tehran_time} (IR Time)\n"
 
             for i, fp in enumerate(file_paths):
                 fname = os.path.basename(fp)
-                uploaded_filenames.append(fname) 
-                
+                uploaded_filenames.append(fname)
+
                 updater.action_text = f"Copying ({i+1}/{total_files})"
                 updater.update_sync(20 + (50 * i / total_files), fname[:10], "-")
 
@@ -87,7 +89,7 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
 
                 display_text = f"{fname} `{size_str}`"
                 safe_display = html.escape(display_text)
-                
+
                 if "_part_" in fname:
                     icon = "🎬"
                 elif fname.endswith((".mp4", ".mkv", ".avi")):
@@ -141,7 +143,7 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
             add_args = ["git", "add", "--sparse", "-f", "Links.md"]
             for fname in uploaded_filenames:
                 add_args.append(f"dl/{fname}")
-                
+
             await run_cmd(*add_args, cwd=clone_dir)
             await run_cmd("git", "commit", "-m", f"✨ Add new files [skip ci]", cwd=clone_dir)
 
@@ -216,21 +218,18 @@ async def clear_github_repo(user: User):
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
 
     async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(f"{api_base}/contents/dl") as resp:
-            if resp.status != 200:
-                raise Exception("Directory `dl/` is already empty or unreachable.")
-            files = await resp.json()
-
-        if not isinstance(files, list):
-            files = [files]
-
-        tree_items =[]
-        for f in files:
-            tree_items.append({"path": f"dl/{f['name']}", "mode": "100644", "type": "blob", "sha": None})
-
         default_header = "## 🔗 Direct Download Links\n\n"
         async with session.post(f"{api_base}/git/blobs", json={"content": base64.b64encode(default_header.encode('utf-8')).decode('utf-8'), "encoding": "base64"}) as resp:
             blob_data = await resp.json()
-            tree_items.append({"path": "Links.md", "mode": "100644", "type": "blob", "sha": blob_data['sha']})
 
-    await _update_repo_tree(user, tree_items, "🧹 Clear all files [skip ci]")
+        tree_items = [{"path": "Links.md", "mode": "100644", "type": "blob", "sha": blob_data['sha']}]
+
+        async with session.post(f"{api_base}/git/trees", json={"tree": tree_items}) as resp:
+            tree_data = await resp.json()
+            new_tree_sha = tree_data['sha']
+
+        async with session.post(f"{api_base}/git/commits", json={"message": "🧹 Clear repository & wipe history [skip ci]", "tree": new_tree_sha, "parents":[]}) as resp:
+            new_commit_data = await resp.json()
+            new_commit_sha = new_commit_data['sha']
+
+        await session.patch(f"{api_base}/git/refs/heads/main", json={"sha": new_commit_sha, "force": True})

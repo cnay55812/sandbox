@@ -65,18 +65,25 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
     zip_path = os.path.join(dir_name, f"{new_base}.zip")
 
     if file_size_mb > split_size:
-        updater.action_text = "✂️ Zipping & Splitting (zip)"
-
-        cmd = ["zip", "-j", "-s", f"{split_size}m"]
-        if comp_mode == "raw":
-            cmd.append("-0")
-        else:
-            cmd.append("-9")
-
         if has_password:
-            cmd.extend(["-P", password])
+            updater.action_text = "🔐 Zipping & Splitting (7z+Pass)"
 
-        cmd.extend([zip_path, file_path])
+            # * We clean old parts and use '-y' (assume yes) to prevent it.
+            for f in glob.glob(os.path.join(dir_name, f"{new_base}.zip.*")):
+                if os.path.exists(f): os.remove(f)
+
+            cmd = ["7z", "a", "-tzip", f"-v{split_size}m", f"-p{password}", "-mx=9", "-y", zip_path, file_path]
+        else:
+            updater.action_text = "✂️ Zipping & Splitting (zip)"
+
+            cmd = ["zip", "-j", "-s", f"{split_size}m"]
+            # NOTE: Apply 0-compression for all raw variants to speed up processing
+            if comp_mode in ["rawnormal", "rawchunk", "zip_smart"]:
+                cmd.append("-0")
+            else:
+                cmd.append("-9")
+
+            cmd.extend([zip_path, file_path])
     else:
         updater.action_text = "📦 Zipping File (7z)"
 
@@ -103,16 +110,20 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
         os.remove(file_path)
 
     if file_size_mb > split_size:
-        parts = glob.glob(os.path.join(dir_name, f"{new_base}.z[0-9]*"))
+        if has_password:
+            parts = glob.glob(os.path.join(dir_name, f"{new_base}.zip.*"))
+            parts.sort()
+        else:
+            parts = glob.glob(os.path.join(dir_name, f"{new_base}.z[0-9]*"))
 
-        def extract_part_num(filename):
-            match = re.search(r'\.z(\d+)$', filename)
-            return int(match.group(1)) if match else 0
+            def extract_part_num(filename):
+                match = re.search(r'\.z(\d+)$', filename)
+                return int(match.group(1)) if match else 0
 
-        parts.sort(key=extract_part_num)
+            parts.sort(key=extract_part_num)
 
-        if os.path.exists(zip_path):
-            parts.append(zip_path)
+            if os.path.exists(zip_path):
+                parts.append(zip_path)
 
         if not parts:
             raise Exception("Archiving failed: output parts not found.")

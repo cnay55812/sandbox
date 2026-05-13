@@ -45,7 +45,8 @@ async def handle_text(message: Message, state: FSMContext):
     task_store[batch_id] = {
         "urls": urls,
         "quality": "best",
-        "is_local": False
+        "is_local": False,
+        "is_video": is_media
     }
 
     if is_media:
@@ -53,7 +54,7 @@ async def handle_text(message: Message, state: FSMContext):
         ])
         await message.answer(f"🎬 **{len(urls)} Media link(s) detected!**\nPlease select quality for all:", reply_markup=keyboard, parse_mode="Markdown")
     else:
-        await ask_compression(message, batch_id)
+        await ask_compression(message, batch_id, is_video=is_media)
 
 # fix: improved audio metadata extraction and filename sanitization
 @router.message(F.document | F.video | F.photo | F.audio)
@@ -120,5 +121,7 @@ async def handle_file(message: Message, state: FSMContext):
         return
 
     batch_id = uuid.uuid4().hex[:8]
-    task_store[batch_id] = {"urls": [file_path], "quality": "raw", "is_local": True}
-    await ask_compression(message, batch_id)
+    is_vid = bool(message.video or (message.document and message.document.mime_type and message.document.mime_type.startswith('video/')))
+
+    task_store[batch_id] = {"urls": [file_path], "quality": "raw", "is_local": True, "is_video": is_vid}
+    await ask_compression(message, batch_id, is_video=is_vid)

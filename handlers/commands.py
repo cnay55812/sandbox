@@ -6,6 +6,7 @@ from database.crud import create_or_update_user, get_user
 from github_integration.git_manager import delete_file_from_github, clear_github_repo
 from config import YOUTUBE_COOKIES
 from handlers.callbacks import active_tasks
+import aiohttp
 
 router = Router()
 
@@ -49,7 +50,23 @@ async def cmd_status(message: Message):
     r_st = f"✅ `{user.github_repo}`" if user.github_repo else "❌"
     c_st = "✅ (Global)" if YOUTUBE_COOKIES else "❌ `Not set in .env`"
 
-    text = f"📊 **Status:**\n\n🔑 **User Token:** {t_st}\n📁 **User Repo:** {r_st}\n🍪 **Global Cookies:** {c_st}"
+    repo_size_str = "Unknown"
+    if user.github_token and user.github_repo:
+        headers = {"Authorization": f"Bearer {user.github_token}"}
+        async with aiohttp.ClientSession(headers=headers) as session:
+            try:
+                async with session.get(f"https://api.github.com/repos/{user.github_repo}") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        size_kb = data.get("size", 0)
+                        if size_kb > 1048576:
+                            repo_size_str = f"{size_kb / 1048576:.2f} GB"
+                        else:
+                            repo_size_str = f"{size_kb / 1024:.2f} MB"
+            except Exception:
+                repo_size_str = "Error fetching"
+
+    text = f"📊 **Status:**\n\n🔑 **User Token:** {t_st}\n📁 **User Repo:** {r_st}\n📦 **Repo Size:** `{repo_size_str}`\n🍪 **Global Cookies:** {c_st}"
     await message.answer(text, parse_mode="Markdown")
 @router.message(Command("del"))
 async def cmd_delete_file(message: Message):
