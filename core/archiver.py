@@ -19,7 +19,11 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
 
     has_password = password and password != "None"
 
-    if comp_mode == "raw" and file_size_mb <= split_size and not has_password:
+    if comp_mode == "rawnormal" and file_size_mb > split_size and not has_password:
+        comp_mode = "zip_smart"
+        updater.action_text = "🧠 Smart Zipping (Too large for Raw)"
+
+    if comp_mode in ["rawnormal", "rawchunk"] and file_size_mb <= split_size and not has_password:
         final_path = os.path.join(dir_name, f"{new_base}{ext}")
         if file_path != final_path:
             if os.path.exists(final_path):
@@ -27,8 +31,9 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
             os.rename(file_path, final_path)
         return [final_path]
 
-    if file_size_mb > split_size and ext in ['.mp4', '.mkv', '.avi', '.webm', '.mov'] and comp_mode == "raw" and not has_password:
+    if file_size_mb > split_size and ext in ['.mp4', '.mkv', '.avi', '.webm', '.mov'] and comp_mode == "rawchunk" and not has_password:
         updater.action_text = "🎬 Splitting Video (FFmpeg)"
+
 
         out_pattern = os.path.join(dir_name, f"{new_base}_part_%03d{ext}")
         cmd =[
@@ -90,7 +95,7 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
         cmd = ["7z", "a", "-tzip"]
         if has_password:
             cmd.extend([f"-p{password}", "-mx=9"])
-        elif comp_mode == "raw":
+        elif comp_mode in ["rawnormal", "rawchunk", "zip_smart"]:
             cmd.append("-mx=0")
         else:
             cmd.append("-mx=9")
